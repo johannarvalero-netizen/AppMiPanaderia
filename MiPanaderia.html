@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PanApp ERP - Control Total</title>
+    <style>
+        :root { --cafe-pro: #3e2723; --azul: #00aeef; --amarillo: #ffeb3b; --verde: #2e7d32; }
+        body { font-family: 'Segoe UI', sans-serif; background-color: #f0f0f0; margin: 0; padding: 10px; padding-bottom: 50px; }
+        .card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); margin-bottom: 15px; }
+        h2, h3 { color: var(--cafe-pro); margin-top: 0; border-bottom: 1px solid #eee; padding-bottom: 5px; font-size: 1.1rem; text-align: center; }
+        
+        select, input { width: 100%; padding: 12px; margin: 8px 0; border-radius: 8px; border: 1px solid #ccc; box-sizing: border-box; font-size: 16px; }
+        
+        .grid-p { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+        .p-box { background: #fffde7; padding: 6px; border: 1px solid #fff59d; border-radius: 6px; }
+        .p-box label { font-size: 10px; font-weight: bold; display: block; }
+        .p-box input { padding: 4px; margin: 0; font-size: 14px; border: none; background: transparent; width: 100%; }
+
+        button { width: 100%; padding: 15px; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 10px; color: white; }
+        .btn-calc { background: var(--cafe-pro); }
+        .btn-hist { background: var(--verde); margin-top: 20px; }
+        .btn-clear { background: #757575; font-size: 12px; padding: 8px; width: auto; display: block; margin: 20px auto 0; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; font-size: 13px; }
+        th, td { border: 1px solid #ddd; padding: 8px; text-align: center; }
+        .bg-a { background: var(--azul); color: white; }
+        .bg-y { background: var(--amarillo); color: black; }
+        
+        /* Estilo para resaltar el Total de la Masa */
+        .fila-total-masa { background: #333; color: white; font-weight: bold; font-size: 15px; }
+        
+        .hist-item { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px dashed #ccc; font-size: 14px; }
+        .total-dia { font-size: 1.2rem; text-align: center; color: var(--verde); font-weight: bold; margin-top: 10px; background: #e8f5e9; padding: 10px; border-radius: 8px; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>🍞 PRODUCCIÓN PANADERA</h2>
+    <label>Tipo de Pan:</label>
+    <select id="tipoPan" onchange="cargarBase()">
+        <option value="">-- Seleccionar Receta --</option>
+        <option value="dulce">Fórmula Masa Dulce</option>
+        <option value="frances">Fórmula Pan Francés</option>
+        <option value="suaves">Fórmula Panes Suaves</option>
+    </select>
+    
+    <label>Harina de Trigo (KG):</label>
+    <input type="number" id="hKG" placeholder="Ej: 13.00" step="0.01">
+    
+    <div id="editor" style="display:none;">
+        <h3>Ajustar Porcentajes %</h3>
+        <div id="inputsGrid" class="grid-p"></div>
+        <button class="btn-calc" onclick="calcular()">CALCULAR CANTIDADES</button>
+    </div>
+</div>
+
+<div id="resArea" class="card" style="display:none;">
+    <h3>RESULTADOS DE LA FÓRMULA</h3>
+    <table>
+        <thead>
+            <tr>
+                <th>PRODUCTO</th>
+                <th class="bg-a">CANT KG</th>
+                <th class="bg-y">CANT GR</th>
+            </tr>
+        </thead>
+        <tbody id="tablaCuerpo">
+            </tbody>
+        <tfoot>
+            <tr class="fila-total-masa">
+                <td>PESO TOTAL DE LA MASA</td>
+                <td id="resTotalKG">0.00</td>
+                <td id="resTotalGR">0</td>
+            </tr>
+        </tfoot>
+    </table>
+    <button class="btn-hist" onclick="agregarAlHistorial()">✅ REGISTRAR EN EL HISTORIAL</button>
+</div>
+
+<div class="card">
+    <h3>📜 HISTORIAL DE PRODUCCIÓN (HOY)</h3>
+    <div id="listaHistorial"></div>
+    <div class="total-dia">HARINA TOTAL USADA: <span id="sumaHarina">0</span> KG</div>
+    <button class="btn-clear" onclick="limpiarHistorial()">BORRAR TODO EL HISTORIAL</button>
+</div>
+
+<script>
+    // Recetas exactas de tus fotos
+    const recetas = {
+        dulce: [{n:"Harina Trigo", p:100}, {n:"Agua", p:41}, {n:"Azúcar", p:29}, {n:"Manteca", p:6}, {n:"Vainilla", p:1.8}, {n:"Sal", p:1}, {n:"Levadura", p:0.25}, {n:"Leche Polvo", p:0}],
+        frances: [{n:"Harina Trigo", p:100}, {n:"Agua", p:51}, {n:"Azúcar", p:6}, {n:"Manteca", p:4}, {n:"Sal", p:2}, {n:"Levadura", p:0.25}, {n:"Masa Madre", p:0}],
+        suaves: [{n:"Harina Trigo", p:100}, {n:"Agua", p:49}, {n:"Azúcar", p:8}, {n:"Manteca B.", p:8}, {n:"Sal", p:2}, {n:"Propionato", p:0.3}, {n:"Emulsionante", p:0.7}, {n:"Levadura", p:0.25}]
+    };
+
+    function cargarBase() {
+        const tipo = document.getElementById('tipoPan').value;
+        const grid = document.getElementById('inputsGrid');
+        if(!tipo) {
+            document.getElementById('editor').style.display="none";
+            return;
+        }
+        
+        grid.innerHTML = "";
+        recetas[tipo].forEach(ing => {
+            const block = ing.n.includes("Harina") ? "readonly style='opacity:0.6'" : "";
+            grid.innerHTML += `
+                <div class="p-box">
+                    <label>${ing.n}</label>
+                    <input type="number" class="val-p" data-n="${ing.n}" value="${ing.p}" step="0.01" ${block}>
+                </div>`;
+        });
+        document.getElementById('editor').style.display="block";
+        document.getElementById('resArea').style.display="none";
+    }
+
+    function calcular() {
+        const h = parseFloat(document.getElementById('hKG').value) || 0;
+        if(h <= 0) return alert("Por favor, ingresa los KG de harina primero.");
+        
+        let html = "";
+        let sumaGR = 0;
+
+        document.querySelectorAll('.val-p').forEach(input => {
+            let p = parseFloat(input.value) || 0;
+            let gr = (h * 1000 * p) / 100;
+            sumaGR += gr;
+            
+            html += `
+                <tr>
+                    <td style="text-align:left">${input.dataset.n}</td>
+                    <td>${(gr/1000).toFixed(2)}</td>
+                    <td>${Math.round(gr).toLocaleString()}</td>
+                </tr>`;
+        });
+
+        // Inyectar filas de ingredientes
+        document.getElementById('tablaCuerpo').innerHTML = html;
+        
+        // Inyectar los totales en la fila oscura
+        document.getElementById('resTotalKG').innerText = (sumaGR / 1000).toFixed(2);
+        document.getElementById('resTotalGR').innerText = Math.round(sumaGR).toLocaleString();
+        
+        document.getElementById('resArea').style.display = "block";
+        window.scrollTo(0, document.body.scrollHeight);
+    }
+
+    function agregarAlHistorial() {
+        const select = document.getElementById('tipoPan');
+        const tipoNom = select.options[select.selectedIndex].text;
+        const harina = document.getElementById('hKG').value;
+        const fecha = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        const registro = { tipo: tipoNom, cant: harina, hora: fecha };
+        let history = JSON.parse(localStorage.getItem('pan_history')) || [];
+        history.push(registro);
+        localStorage.setItem('pan_history', JSON.stringify(history));
+        
+        alert("¡Producción de " + tipoNom + " registrada con éxito!");
+        mostrarHistorial();
+    }
+
+    function mostrarHistorial() {
+        const lista = document.getElementById('listaHistorial');
+        const history = JSON.parse(localStorage.getItem('pan_history')) || [];
+        let totalH = 0;
+        lista.innerHTML = "";
+        
+        history.forEach(reg => {
+            totalH += parseFloat(reg.cant);
+            lista.innerHTML += `
+                <div class="hist-item">
+                    <span><b>${reg.hora}</b> - ${reg.tipo}</span>
+                    <span>${reg.cant} KG Harina</span>
+                </div>`;
+        });
+        document.getElementById('sumaHarina').innerText = totalH.toFixed(2);
+    }
+
+    function limpiarHistorial() {
+        if(confirm("¿Estás seguro de que quieres borrar el historial de hoy?")) {
+            localStorage.removeItem('pan_history');
+            mostrarHistorial();
+        }
+    }
+
+    mostrarHistorial();
+</script>
+</body>
+</html>
